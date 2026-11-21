@@ -11,6 +11,7 @@ internal static class FormLauncher
         Application.EnableVisualStyles();
         string folder = AppDomain.CurrentDomain.BaseDirectory;
         string python = Path.Combine(folder, @"runtime\python.exe");
+        if (!File.Exists(python)) python = Path.Combine(folder, @"dist\FormStudio\runtime\python.exe");
         if (!File.Exists(python)) python = Path.Combine(folder, @".venv\Scripts\python.exe");
         if (!File.Exists(python)) python = Environment.GetEnvironmentVariable("FORM_PYTHON") ?? "";
         string dataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FormStudio");
