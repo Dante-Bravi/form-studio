@@ -1,16 +1,16 @@
 # FORM Studio
 
-Webcam exercise sessions with curl counting and a three-line PDF summary.
+Webcam exercise sessions with curl counting and a simple illustrated PDF summary.
 
 ## Run on Windows
 
 1. Download **FormStudio-Windows-x64.zip** from this repository's **Releases**.
 2. Extract the entire ZIP, then double-click **FormStudio.exe**.
-3. Choose an exercise and rep goal, then start. Download the PDF when finished.
+3. Choose an exercise, reps per set, and number of sets, then start. Download the PDF when finished.
 
 Windows 10/11 x64, a webcam, and Microsoft Edge are required. The release includes Python, dependencies, and model weights; no Python or Node.js installation is needed. Keep the extracted files together.
 
-Curls count automatically **per arm**. Other exercises use **Log completed rep**. Pauses are excluded from elapsed time. Camera processing stays on your computer.
+Curls count at the top of each lift **per arm**; lowering only prepares the next rep. Other exercises use **Log completed rep**. After each set, rest and click **Start set** when ready; rest time is excluded. The PDF includes total reps and completed sets. Use **Reset & change exercise** to clear a session and unlock exercise selection. Pauses are excluded from elapsed time. Camera processing stays on your computer.
 
 ## Run from source
 

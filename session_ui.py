@@ -1,4 +1,4 @@
-"""Session state, camera dashboard, and dependency-free PDF receipts."""
+"""Session state, camera dashboard, and illustrated PDF receipts."""
 from datetime import datetime
 from pathlib import Path
 import cv2
@@ -11,8 +11,9 @@ def duration(seconds):
 
 
 class Session:
-    def __init__(self, target=10):
+    def __init__(self, target=10, sets=1):
         self.target = target
+        self.sets_target = sets
         self.reset()
 
     def reset(self):
@@ -20,6 +21,23 @@ class Session:
         self.elapsed = 0.0
         self.running_since = None
         self.completed_at = None
+        self.awaiting_next_set = False
+
+    @property
+    def total_target(self):
+        return self.target * self.sets_target
+
+    @property
+    def completed_sets(self):
+        return min(self.count // self.target, self.sets_target)
+
+    @property
+    def set_number(self):
+        return self.completed_sets if self.awaiting_next_set else min(self.completed_sets + 1, self.sets_target)
+
+    @property
+    def set_reps(self):
+        return self.target if self.awaiting_next_set or self.completed_at else self.count % self.target
 
     def seconds(self, now):
         return self.elapsed + (now - self.running_since if self.running_since is not None else 0)
@@ -30,47 +48,32 @@ class Session:
 
     def start(self, now):
         if self.completed_at is None and self.running_since is None:
+            self.awaiting_next_set = False
             self.running_since = now
 
     def add(self, count, now):
         if self.running_since is None or self.completed_at is not None:
             return
         # Model predictions may be NumPy scalars; keep transport/report values native.
-        self.count = min(self.target, self.count + int(count))
-        if self.count == self.target:
+        remaining = self.target - self.count % self.target
+        increment = max(0, min(remaining, int(count)))
+        if not increment:
+            return
+        self.count += increment
+        if self.count == self.total_target:
             self.pause(now)
             self.completed_at = datetime.now().astimezone()
+        elif self.count % self.target == 0:
+            self.pause(now)
+            self.awaiting_next_set = True
 
     def export(self, path, exercise):
         if self.completed_at is None:
             raise ValueError("Finish the session before exporting.")
-        exercise_name = {"Dumbbell curl": "Dumbbell curls",
-                         "Floor push-up": "Floor push-ups",
-                         "Shoulder press": "Shoulder presses",
-                         "Bent-over row": "Bent-over rows"}.get(exercise, exercise)
-        lines = [f"{exercise_name} completed: {self.count}",
-                 f"Time taken: {duration(self.elapsed)}",
-                 self.completed_at.strftime('%B %d, %Y')]
-        stream = b"0.08 0.13 0.20 rg\n"
-        for i, line in enumerate(lines):
-            escaped = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-            stream += f"BT /F1 14 Tf 56 {760 - i * 28} Td ({escaped}) Tj ET\n".encode("cp1252", "replace")
-        objects = [b"<< /Type /Catalog /Pages 2 0 R >>",
-                   b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-                   b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-                   b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
-                   b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"endstream"]
-        data = bytearray(b"%PDF-1.4\n")
-        offsets = [0]
-        for i, obj in enumerate(objects, 1):
-            offsets.append(len(data))
-            data.extend(f"{i} 0 obj\n".encode() + obj + b"\nendobj\n")
-        start = len(data)
-        data.extend(b"xref\n0 6\n0000000000 65535 f \n")
-        for offset in offsets[1:]:
-            data.extend(f"{offset:010d} 00000 n \n".encode())
-        data.extend(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{start}\n%%EOF\n".encode())
-        Path(path).write_bytes(data)
+        from exercise_pdf import export_session
+        export_session(path, exercise, self.count, self.elapsed, self.completed_at,
+                       sets_completed=self.completed_sets, reps_per_set=self.target)
+
 
 
 def dashboard(frame, exercises, selected, session, active, now, status, movement, color, notice):

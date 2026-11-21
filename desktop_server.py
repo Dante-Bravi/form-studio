@@ -30,6 +30,9 @@ class DesktopBridge:
             if ok:
                 self.frame = encoded.tobytes()
             self.state = dict(ready=True, count=session.count, target=session.target,
+                sets=session.sets_target, total_target=session.total_target,
+                set_reps=session.set_reps, set_number=session.set_number,
+                completed_sets=session.completed_sets, awaiting_next_set=session.awaiting_next_set,
                 elapsed=session.seconds(now), selected=selected, active=active,
                 completed=session.completed_at.isoformat() if session.completed_at else None,
                 status=status, movement=movement)
@@ -46,9 +49,12 @@ class DesktopBridge:
             if not self.commands:
                 return 255
             command = self.commands.popleft()
-        if 'target' in command:
+        if 'target' in command or 'sets' in command:
             if session.running_since is None and session.count == 0 and session.elapsed == 0:
-                session.target = command['target']
+                if 'target' in command:
+                    session.target = command['target']
+                else:
+                    session.sets_target = command['sets']
             return 255
         return command['key']
 
@@ -107,6 +113,9 @@ def serve(bridge):
                 command = json.loads(self.rfile.read(length))
                 if set(command) == {'target'}:
                     if type(command['target']) is not int or not 1 <= command['target'] <= 999:
+                        raise ValueError()
+                elif set(command) == {'sets'}:
+                    if type(command['sets']) is not int or not 1 <= command['sets'] <= 99:
                         raise ValueError()
                 elif set(command) == {'key'}:
                     if command['key'] not in [32, 49, 50, 51, 52, 99, 114]:

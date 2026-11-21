@@ -11,7 +11,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = ['FormStudio.exe', 'FORM.ico', 'desktop_server.py', 'live_camera.py', 'model_assets.py',
-         'session_ui.py', 'train_form.py', 'form_models.joblib', 'movement_model.joblib',
+         'session_ui.py', 'exercise_pdf.py', 'train_form.py', 'form_models.joblib', 'movement_model.joblib',
          'pose_landmarker_lite.task', 'README.md', 'THIRD_PARTY.md', 'DEPENDENCIES.txt']
 
 
@@ -38,6 +38,7 @@ def main():
             shutil.copy2(ROOT / name, stage / name)
     shutil.copytree(ROOT / 'desktop', stage / 'desktop', dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns('main.cjs', '__pycache__', '*.log'))
+    shutil.copytree(ROOT / 'assets', stage / 'assets', dirs_exist_ok=True)
     target = stage / 'runtime'
     target.mkdir(exist_ok=True)
     for file in ([] if args.reuse_runtime else runtime.iterdir()):

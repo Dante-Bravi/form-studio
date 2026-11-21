@@ -95,7 +95,7 @@ def moving_arms(samples, now, exercise):
 
 
 class CurlTracker:
-    """Track a visible extension, lift, and return for one arm."""
+    """Detect the top of a lift; require extension only to rearm the next rep."""
 
     def __init__(self):
         self.readings = deque(maxlen=3)
@@ -107,6 +107,7 @@ class CurlTracker:
         self.started = None
         self.phase = None
         self.verified = False
+        self.counted = False
         self.extreme = 0
         self.last_progress = None
         self.last_visible = None
@@ -136,7 +137,7 @@ class CurlTracker:
             return False
         angle, reach, wrist_height, upper_x, upper_y = np.median(self.readings, axis=0)
 
-        if self.phase is not None and (now - self.last_progress > 0.85 or now - self.started > 9):
+        if self.phase == "lifting" and (now - self.last_progress > 0.85 or now - self.started > 9):
             self.reset()
         if self.baseline is None:
             if angle >= 120:
@@ -159,29 +160,28 @@ class CurlTracker:
         if not steady_upper_arm or upper_y > -0.35:
             self.reset()
             return False
+        # The top is a latched state: holding or jittering cannot add reps.
+        # Lowering only rearms a new lift; it never awards a repetition.
+        if self.phase == "top":
+            if bend <= 20:
+                self.reset()
+            return False
         if not image_moving:
             return False
 
-        if self.phase == "lifting":
-            if bend >= self.extreme + 3:
-                self.extreme, self.last_progress = bend, now
-            elif bend <= self.extreme - 9:
-                if self.extreme < 40:
-                    self.reset()
-                else:
-                    self.phase = "lowering"
-                    self.extreme, self.last_progress = bend, now
-            return False
-
-        if bend >= self.extreme + 12:
-            self.reset()
-            return False
-        if bend <= self.extreme - 3:
-            self.extreme, self.last_progress = bend, now
-        if bend <= 20 and now - self.started >= 0.25:
-            self.reset()
+        # A clearly bent arm or a short hold at its highest point is the top.
+        # Preserve the previous minimum excursion for shorter-range curls.
+        at_top = angle <= 90 or (bend >= self.extreme - 4 and now - self.last_progress >= 0.25)
+        if at_top and bend >= 40 and now - self.started >= 0.25:
+            self.phase = "top"
+            self.last_progress = now
             return True
+        if bend >= self.extreme + 3:
+            self.extreme, self.last_progress = bend, now
+        elif bend <= self.extreme - 9:
+            self.reset()
         return False
+
 
 
 def detect_movement(model, samples, now, minimum_confidence=0):
@@ -207,8 +207,8 @@ def model_confirms_curl(model, samples, started):
     probabilities = model.predict_proba([summarize(rows[-MOVEMENT_WINDOW:])])[0]
     ranked = np.argsort(probabilities)
     best, runner_up = ranked[-1], ranked[-2]
-    return (model.classes_[best] == "bicep_curl" and probabilities[best] >= 0.60
-            and probabilities[best] - probabilities[runner_up] >= 0.18)
+    return (model.classes_[best] == "bicep_curl" and probabilities[best] >= 0.45
+            and probabilities[best] - probabilities[runner_up] >= 0.10)
 
 
 def run(camera_index, leds=(), bridge=None):
@@ -225,7 +225,7 @@ def run(camera_index, leds=(), bridge=None):
     session = Session()
     buttons = []
     notice = ""
-    selected = 0
+    selected = 1
     active = False
     samples = deque()
     next_sample = next_prediction = last_image_motion = 0
@@ -300,19 +300,22 @@ def run(camera_index, leds=(), bridge=None):
                             recent_motion = now - last_image_motion <= 0.75
                             completed = 0
                             for side, tracker in enumerate(curl_trackers):
-                                started_at, verified = tracker.started, tracker.verified
-                                finished = tracker.update(pose, side, width / height, now, recent_motion)
-                                if finished:
-                                    completed += verified or model_confirms_curl(
-                                        movement_model, samples, started_at
+                                tracker.update(pose, side, width / height, now, recent_motion)
+                                if tracker.phase == "top" and not tracker.counted:
+                                    accepted = tracker.verified or model_confirms_curl(
+                                        movement_model, samples, tracker.started
                                     )
+                                    if accepted:
+                                        tracker.counted = True
+                                        tracker.verified = True
+                                        completed += 1
                                 elif tracker.phase is not None and not tracker.verified:
                                     tracker.verified = model_confirms_curl(
                                         movement_model, samples, tracker.started
                                     )
                             session.add(completed, now)
                             curl_count = session.count
-                            if session.completed_at:
+                            if session.completed_at or session.awaiting_next_set:
                                 active = False
                             if completed:
                                 curl_feedback_until = now + 0.5
@@ -416,7 +419,7 @@ def run(camera_index, leds=(), bridge=None):
                         session.target = max(1, min(999, session.target + (-1 if key == ord("-") else 1)))
                 elif key == ord("c") and EXERCISES[selected][0] != "bicep_curl":
                     session.add(1, now)
-                    if session.completed_at:
+                    if session.completed_at or session.awaiting_next_set:
                         active = False
                 elif ord("1") <= key <= ord("4") and session.count == 0 and session.elapsed == 0 and not active:
                     for tracker in curl_trackers:
