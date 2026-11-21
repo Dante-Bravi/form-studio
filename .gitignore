@@ -1,0 +1,13 @@
+_local_training/
+.training-deps/
+runtime/
+.venv/
+node_modules/
+dist/
+__pycache__/
+*.pyc
+*.log
+*.pdf
+*.exe
+*.zip
+/movement_model.joblib
